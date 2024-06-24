@@ -48,10 +48,9 @@ func NewZincSearchEngineAdapter() *ZincSearchEngineAdapter {
 	return &adp
 }
 
-func (zsea *ZincSearchEngineAdapter) Bulk(emails []entity.Email) error {
+func (zsea *ZincSearchEngineAdapter) SendBulkEmails(emails []entity.Email) error {
 	request := BulkRequest{Index: zsea.index, Records: emails}
 	data, err := json.Marshal(request)
-
 	if err != nil {
 		return err
 	}
@@ -71,7 +70,7 @@ func (zsea *ZincSearchEngineAdapter) Bulk(emails []entity.Email) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to index email: %s", resp.Status)
+		return fmt.Errorf("failed to create emails: %s", resp.Status)
 	}
 
 	return nil

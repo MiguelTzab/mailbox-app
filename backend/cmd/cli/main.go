@@ -7,88 +7,108 @@ import (
 	"mailbox-app/internal/entity"
 	"mailbox-app/internal/service"
 	"mailbox-app/internal/service/adapter"
+	"mailbox-app/internal/utils"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 func main() {
 	destDir := flag.String("dir", "enron_data", "Directory to search Enron dataset")
-	batchSize := flag.Int("batch", 5000, "Number of batches to send")
+	workers := flag.Int("workers", 5, "Number of concurrent workers")
+	batchSize := flag.Int("batch-size", 10000, "Number of batches to send")
+	profile := flag.Bool("profile", false, "write cpu and memory profile files")
 	flag.Parse()
 
+	if *profile {
+		defer utils.StartCPUProfile("cpu.prof")()
+		defer utils.StartMemProfile("mem.prof")()
+	}
+
 	fmt.Println("Searching emails...")
-	emails, err := SearchEmails(*destDir)
-	fmt.Println("Emails found", len(emails))
+	files, err := searchEmails(*destDir)
 
 	if err != nil {
-		log.Fatalf("Failed to parse emails: %v", err)
+		log.Fatal("Failed to search emails: ", err)
 	}
 
-	indexer := service.NewService(adapter.NewZincSearchEngineAdapter())
-	for _, batch := range CreateBatch(*batchSize, emails) {
-		if err := indexer.SaveEmails(batch); err != nil {
-			log.Printf("Failed to export emails: %v", err)
-		}
+	if len(files) == 0 {
+		log.Fatal("No emails found")
 	}
-	fmt.Println("Exporting completed.")
-}
 
-func SearchEmails(dir string) ([]entity.Email, error) {
-	var emails []entity.Email
-	var wg sync.WaitGroup
-	emailChan := make(chan entity.Email)
-	errChan := make(chan error)
-	doneChan := make(chan struct{})
+	fmt.Println("Emails found", len(files))
+	wp := utils.NewWorkerPool(*workers, len(files))
+	wp.Start()
 
 	go func() {
-		for email := range emailChan {
-			emails = append(emails, email)
-		}
-		doneChan <- struct{}{}
+		enqueueFiles(files, *wp)
 	}()
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	numBatches := (len(files) + *batchSize - 1) / *batchSize
+
+	ep := utils.NewWorkerPool(*workers, numBatches)
+	ep.Start()
+
+	handleEmails(files, *batchSize, *wp, *ep)
+
+	wp.Close()
+	ep.Close()
+}
+
+func searchEmails(dir string) ([]string, error) {
+	var emailPaths []string
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() {
-			wg.Add(1)
-			go func(path string) {
-				defer wg.Done()
-				email, err := entity.EmailFromFile(path)
-				if err != nil {
-					errChan <- fmt.Errorf("error parsing email %s: %v", path, err)
-					return
-				}
-				emailChan <- email
-			}(path)
+		if !d.IsDir() {
+			emailPaths = append(emailPaths, path)
 		}
 		return nil
 	})
 
-	go func() {
-		wg.Wait()
-		close(emailChan)
-	}()
+	if err != nil {
+		return nil, err
+	}
 
-	go func() {
-		for err := range errChan {
-			fmt.Printf("Error: %v\n", err)
-		}
-	}()
-
-	<-doneChan
-	return emails, err
+	return emailPaths, nil
 }
 
-func CreateBatch(batchSize int, emails []entity.Email) [][]entity.Email {
-	batches := make([][]entity.Email, 0, (len(emails)+batchSize-1)/batchSize)
-
-	for batchSize < len(emails) {
-		emails, batches = emails[batchSize:], append(batches, emails[0:batchSize:batchSize])
+func enqueueFiles(files []string, wp utils.WorkerPool) {
+	for _, file := range files {
+		wp.Submit(func(args ...interface{}) (interface{}, error) {
+			f := args[0].(string)
+			return entity.EmailFromFile(f)
+		}, file)
 	}
-	batches = append(batches, emails)
+}
 
-	return batches
+func handleEmails(files []string, batchSize int, wp utils.WorkerPool, ep utils.WorkerPool) {
+	var emails = make([]entity.Email, batchSize)
+	searchEngineService := service.NewSearchEngineService(adapter.NewZincSearchEngineAdapter())
+
+	for range files {
+		result := wp.GetResult()
+		if result.Err != nil {
+			continue
+		}
+
+		email, ok := result.Result.(entity.Email)
+		if !ok {
+			fmt.Println("Error: invalid result type")
+			continue
+		}
+
+		emails = append(emails, email)
+		if len(emails) >= batchSize {
+			ep.Submit(func(args ...interface{}) (interface{}, error) {
+				b := args[0].([]entity.Email)
+				s := args[1].(service.SearchEngineService)
+
+				return nil, s.SaveEmails(b)
+			}, emails, *searchEngineService)
+
+			emails = nil
+		}
+	}
 }

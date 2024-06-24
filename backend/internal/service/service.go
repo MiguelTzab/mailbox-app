@@ -5,14 +5,14 @@ import (
 	"mailbox-app/internal/service/adapter"
 )
 
-type Service struct {
+type SearchEngineService struct {
 	adapter adapter.SearchEngine
 }
 
-func NewService(adapter adapter.SearchEngine) *Service {
-	return &Service{adapter: adapter}
+func NewSearchEngineService(adapter adapter.SearchEngine) *SearchEngineService {
+	return &SearchEngineService{adapter: adapter}
 }
 
-func (svc *Service) SaveEmails(emails []entity.Email) error {
-	return svc.adapter.Bulk(emails)
+func (svc *SearchEngineService) SaveEmails(emails []entity.Email) error {
+	return svc.adapter.SendBulkEmails(emails)
 }

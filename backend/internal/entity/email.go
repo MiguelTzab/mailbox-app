@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"mailbox-app/internal/utils"
+	"net/mail"
 	"os"
 	"strings"
 )
 
 type Email struct {
-	From    string
-	To      []string
-	Subject string
-	Body    string
+	MessageId string   `json:"message_id"`
+	From      string   `json:"from"`
+	To        []string `json:"to"`
+	Subject   string   `json:"subject"`
+	Date      string   `json:"date"`
+	Body      string   `json:"body"`
 }
 
 func EmailFromFile(path string) (Email, error) {
@@ -22,61 +26,39 @@ func EmailFromFile(path string) (Email, error) {
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
+	r := bufio.NewReader(file)
+	m, err := mail.ReadMessage(r)
 	if err != nil {
 		return Email{}, err
 	}
-	fileSize := fileInfo.Size()
 
-	reader := bufio.NewReader(file)
-	var email Email
-	var bodyLines []string
-	isBody := false
-	hasRequiredHeaders := false
-	lineCount := 0
+	header := m.Header
+
+	var body strings.Builder
+	chunkSize := 4096 // Tamaño del buffer para leer en partes
+	part := make([]byte, chunkSize)
 
 	for {
-		lineCount++
-		if reader.Buffered() == 0 && int64(lineCount) >= fileSize {
-			break
+		n, err := m.Body.Read(part)
+		if n > 0 {
+			body.Write(part[:n])
 		}
-
-		line, err := reader.ReadString('\n')
-
 		if err == io.EOF {
 			break
 		}
-
-		if err != nil && err != io.EOF {
-			return Email{}, err
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			isBody = true
-			continue
-		}
-
-		if isBody {
-			bodyLines = append(bodyLines, line)
-		} else {
-			if strings.HasPrefix(line, "From:") {
-				email.From = strings.TrimSpace(line[5:])
-				hasRequiredHeaders = true
-			} else if strings.HasPrefix(line, "To:") {
-				email.To = strings.Split(strings.TrimSpace(line[3:]), ",")
-				hasRequiredHeaders = true
-			} else if strings.HasPrefix(line, "Subject:") {
-				email.Subject = strings.TrimSpace(line[8:])
-				hasRequiredHeaders = true
-			}
+		if err != nil {
+			return Email{}, fmt.Errorf("error reading body: %w", err)
 		}
 	}
 
-	if !hasRequiredHeaders {
-		return Email{}, fmt.Errorf("missing required headers in email: %s", path)
+	email := Email{
+		MessageId: header.Get("Message-ID"),
+		Date:      header.Get("Date"),
+		From:      header.Get("From"),
+		To:        utils.SplitAndTrim(header.Get("To"), ","),
+		Subject:   header.Get("Subject"),
+		Body:      body.String(),
 	}
 
-	email.Body = strings.Join(bodyLines, "\n")
 	return email, nil
 }
