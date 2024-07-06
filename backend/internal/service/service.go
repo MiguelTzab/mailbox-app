@@ -16,3 +16,7 @@ func NewSearchEngineService(adapter adapter.SearchEngine) *SearchEngineService {
 func (svc *SearchEngineService) SaveEmails(emails []entity.Email) error {
 	return svc.adapter.SendBulkEmails(emails)
 }
+
+func (svc *SearchEngineService) GetEmails(query entity.SearchQuery) (entity.SearchResult, error) {
+	return svc.adapter.SearchEmails(query)
+}

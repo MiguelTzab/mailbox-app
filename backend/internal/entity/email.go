@@ -11,7 +11,7 @@ import (
 )
 
 type Email struct {
-	MessageId string   `json:"message_id"`
+	MessageId string   `json:"messageId"`
 	From      string   `json:"from"`
 	To        []string `json:"to"`
 	Subject   string   `json:"subject"`
