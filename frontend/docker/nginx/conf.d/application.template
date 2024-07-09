@@ -1,0 +1,12 @@
+server {
+  listen 81 default_server;
+
+  root /app;
+
+  sendfile on;
+  default_type application/octet-stream;
+
+  location / {
+      try_files $uri $uri/ /index.html =404;
+  }
+}

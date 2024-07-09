@@ -1,0 +1,20 @@
+upstream backend {
+  server api:3000;
+}
+
+upstream frontend {
+  server web:81;
+}
+
+server {
+    listen 81;
+
+    location / {
+        proxy_pass http://frontend;
+    }
+
+    location /api {
+        rewrite /api/(.*) /$1 break;
+        proxy_pass http://backend;
+    }
+}

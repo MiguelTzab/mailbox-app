@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "8004:81"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: ./Dockerfile
+    depends_on:
+        - zincsearch
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: ./docker/Dockerfile
+    depends_on:
+      - api
+
+  zincsearch:
+    image: public.ecr.aws/zinclabs/zinc:latest
+    container_name: zinc
+    ports:
+      - "4080:4080"
+    volumes:
+      - zinc_data:/data
+    environment:
+      - ZINC_DATA_PATH=/data
+      - ZINC_FIRST_ADMIN_USER=admin
+      - ZINC_FIRST_ADMIN_PASSWORD=atd5NF35mX£k
+
+volumes:
+  zinc_data:
