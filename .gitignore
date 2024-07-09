@@ -1,4 +1,2 @@
-.idea/
-backend/*.prof
 .DS_Store
 docker-compose.override.yml
