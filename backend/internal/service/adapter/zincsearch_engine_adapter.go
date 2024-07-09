@@ -156,7 +156,6 @@ func buildSearchRequest(query entity.SearchQuery) ([]byte, error) {
 	if err != nil {
 		return []byte{}, err
 	}
-	fmt.Println(zincQuery)
 
 	return requestBody, nil
 }
